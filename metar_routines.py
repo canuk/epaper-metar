@@ -11,6 +11,7 @@ from metar_settings import *
 import urllib.request, urllib.error, urllib.parse
 import xml.etree.ElementTree as ET
 import socket
+import requests
 
 # Misc Variables
 decode = []      # used to decode the raw metar
@@ -37,6 +38,23 @@ class_c = ['KBHM', 'KHSV', 'KMOB', 'PANC', 'KDMA', 'KTUS', 'KLIT', 'KXNA', 'KBAB
            'KAUS', 'KCRP', 'KDLF', 'KDYS', 'KELP', 'KHRL', 'KLBB', 'KMAF', 'KSAT', 'KBTV', \
            'KORF', 'KRIC', 'KROA', 'KGEG', 'KNUW', 'KSKA', 'KCRW', 'KGRB', 'KMKE', 'KMSN', \
            'TJSJ', 'TIST']
+
+class Metar:
+    def __init__(self, airport):
+        self.data = requests.get(
+            f"https://aviationweather.gov/api/data/metar?ids="+airport+"&format=json&hours=2.5").json()
+        self.data2 = requests.get(
+            f"https://aviationweather.gov/api/data/metar?ids="+airport+"&format=json&hours=2.5").json()
+        requests.session().close()
+        pass
+
+    def update(self, airport):
+        self.data = requests.get(
+            f"https://aviationweather.gov/api/data/metar?ids="+airport+"&format=json&hours=2.5").json()
+        self.data2 = requests.get(
+            f"https://aviationweather.gov/api/data/metar?ids="+airport+"&format=json&hours=2.5").json()
+        requests.session().close()
+        return self.data, self.data2
         
         
 # Conversion routines   

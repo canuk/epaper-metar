@@ -1,6 +1,6 @@
 # metar_main.py
 # E-Paper METAR Display - by Mark Harris
-# Version 2.2
+# Version 2.2 - Modified for 4-Grayscale epd4in2
 # Part of Epaper Display project found at; https://github.com/markyharris/metar/
 #
 # UPDATED to New FAA API 12-2023, https://aviationweather.gov/data/api/
@@ -24,8 +24,8 @@
 # While not part of the scripts, it is suggested to setup a nightly reboot using crontab
 # see; https://smarthomepursuits.com/how-to-reboot-raspberry-pi-on-a-schedule/ for information
 #
-# The script will then either display the json weather information provided, 
-# or if the json information is not given, the script will use the data scraped 
+# The script will then either display the json weather information provided,
+# or if the json information is not given, the script will use the data scraped
 # from the raw metar string provided. However, the json data is a bit more accurate.
 #
 # Dynamic icon's are displayed depending on the value of each weather field.
@@ -33,13 +33,13 @@
 # For specific info on using e-paper display with RPi, see;
 #   https://www.waveshare.com/wiki/Template:Raspberry_Pi_Guides_for_SPI_e-Paper
 # For information on the specific display used for this project see;
-#   https://www.waveshare.com/wiki/7.5inch_e-Paper_HAT_(B)
+#   https://www.waveshare.com/wiki/7.5inch_e-Paper_HAT_(B) -- NOTE: CODE MODIFIED FOR 4in2 GRAYSCALE
 #
 # Software is organized into separate scripts depending on its focus
 #   metar_main.py - loads the other files as necessary and executes layout routine
 #   metar_routines.py - metar specific routines, typically needed for decoding and scraping
 #   metar_layouts.py - houses all the different layouts available for display
-#   metar_display.py - provides the routines and fonts needed to print to e-paper
+#   metar_display.py - provides the routines and fonts needed to print to e-paper (LARGELY BYPASSED in this version)
 #   metar_settings.py - User defined default settings such as airport and update interval
 #   metar_remarks.py - file created from FAA's definitions of a METAR's remarks (RMK)
 #   shutdown.py - Used to blank e-Paper on shutdown.
@@ -51,34 +51,79 @@
 
 
 # Imports
+# Keep existing imports and add traceback
 from metar_layouts import *
 from metar_settings import *
-from metar_routines import *
+from metar_routines import * # Ensures Metar class should be imported
+# Import PIL for direct drawing
+from PIL import Image, ImageDraw, ImageFont
 import time
 import requests
 import json
 import sys
 import os
 import sys
+import logging # Added for consistency with Waveshare examples
+import config
+import traceback # <--- ADDED IMPORT
 
+# Setup logging
+logging.basicConfig(level=logging.INFO) # Use INFO or DEBUG
 
-# epd7in5b_V2 = 3-color 7 by 5 display. Change this based on the display used.
-# find 'epd = epd7in5b_V2.EPD()' towards bottom and change also if needed.
-# These are located in the directory 'waveshare_epd'
-from waveshare_epd import epd7in5b_V2 
- 
+# Import specific display driver
+from waveshare_epd import epd4in2
+
+# --- Define Fonts and Assign to Config Module ---
+basedir = os.path.dirname(os.path.realpath(__file__))
+fontdir = os.path.join(basedir, 'fonts')
+regular_font_path = os.path.join(fontdir, 'noto', 'NotoSansMono-Regular.ttf')
+bold_font_path = os.path.join(fontdir, 'noto', 'NotoSansMono-Bold.ttf')
+
+try:
+    logging.info(f"Loading regular font: {regular_font_path}")
+    logging.info(f"Loading bold font: {bold_font_path}")
+
+    # Assign fonts directly to the imported config module
+    config.font16 = ImageFont.truetype(regular_font_path, 16)
+    config.font16b = ImageFont.truetype(bold_font_path, 16)
+    config.font24 = ImageFont.truetype(regular_font_path, 24)
+    config.font24b = ImageFont.truetype(bold_font_path, 24)
+    config.font36 = ImageFont.truetype(regular_font_path, 36)
+    config.font36b = ImageFont.truetype(bold_font_path, 36)
+    config.font48 = ImageFont.truetype(regular_font_path, 48)
+    config.font48b = ImageFont.truetype(bold_font_path, 48)
+    # Add others if needed...
+
+    logging.info("Fonts loaded successfully into config.")
+
+except Exception as e: # Catch generic Exception during font loading
+    logging.error(f"Font file not found or cannot be read: {e}")
+    logging.error(f"Regular: {regular_font_path}")
+    logging.error(f"Bold: {bold_font_path}")
+    logging.warning("Using default PIL font as fallback.")
+    # Assign default fonts to the config module
+    config.font16 = ImageFont.load_default()
+    config.font16b = ImageFont.load_default()
+    config.font24 = ImageFont.load_default()
+    config.font24b = ImageFont.load_default()
+    config.font36 = ImageFont.load_default()
+    config.font36b = ImageFont.load_default()
+    config.font48 = ImageFont.load_default()
+    config.font48b = ImageFont.load_default()
+# ---------------------------------------------------------------------
+
 # Layouts - add new layouts to this list as necessary
-layout_list = [layout0,layout1,layout2,layout3,layout4,layout5,layout6,layout7,layout8,layout9] # Add layout routine names here
-use_preferred = 1
+# Ensure these layout functions are updated to accept (epd, Limage, draw, ...) signature
+layout_list = [layout_wind] # Add layout routine names here
+use_preferred = 0
 
-# Check for cmdline args and use passed variables instead of the defaults
-# example ['/home/pi/metar/metar_main.py', 'metar', 'kabe', '1', '0', '1', '2', '0', '0', '1', '1', '123']
+# --- Command Line Argument Processing ---
+# (Keep existing cmdline arg processing as is)
 print('len(sys.argv):',len(sys.argv)) # debug
 print('sys.argv:',sys.argv,'\n') # debug
 
-# check to see if web admin is supplying the args. If not, use settings.py
 if len(sys.argv) >= 10:
-    print('Using Args passed from web admin')
+    logging.info('Using Args passed from web admin')
     airport = str(sys.argv[1].upper())
     use_disp_format = int(sys.argv[2])
     interval = int(sys.argv[3])
@@ -93,152 +138,180 @@ if len(sys.argv) >= 10:
     print('\033[96mpreferred_layouts:',preferred_layouts,'\033[0m') # debug
     if preferred_layouts == 'na':
         use_preferred = 0
-#        print('DONT Use Preferred') # debug
     else:
         use_preferred = 1
-#        print('YES Use Preferred') # debug
-
 else:
-    print('Using Args from settings.py file')
+    logging.info('Using Args from settings.py file')
+    # Assuming these are loaded from metar_settings import *
+    # airport, use_disp_format, interval, etc.
 
 print("\nAirport\t", "Layout\t", "Update\t", "Remarks")
 print(str(airport)+"\t", str(use_disp_format)+"\t", str(interval)+"\t", str(use_remarks)+"\n")
 
 
-def main():
-    global display,metar,remarks,print_table,use_remarks,use_disp_format,interval,wind_speed_units,cloud_layer_units,visibility_units,temperature_units,pressure_units,layout_list,preferred_layouts,use_preferred
+def main(epd, Limage, draw): # Accept epd, Limage, draw
+    global metar, remarks, print_table, use_remarks, use_disp_format, interval, wind_speed_units, cloud_layer_units, visibility_units, temperature_units, pressure_units, layout_list, preferred_layouts, use_preferred
 
-    # Choose  which layout to use.        
+    # Choose which layout to use.
+    # Pass epd, Limage, draw, and other params to the layout functions
     if use_disp_format == -1:
-        random_layout(display,metar,remarks,print_table,use_remarks,use_disp_format,interval,wind_speed_units,cloud_layer_units,visibility_units,temperature_units,pressure_units,layout_list)
+        # random_layout needs update to accept (epd, Limage, draw, ...)
+        random_layout(epd, Limage, draw, metar, remarks, print_table, use_remarks, use_disp_format, interval, wind_speed_units, cloud_layer_units, visibility_units, temperature_units, pressure_units, layout_list)
 
     elif use_disp_format == -2:
-        cycle_layout(display,metar,remarks,print_table,use_remarks,use_disp_format,interval,wind_speed_units,cloud_layer_units,visibility_units,temperature_units,pressure_units,layout_list,preferred_layouts,use_preferred)
+        # cycle_layout needs update to accept (epd, Limage, draw, ...)
+        cycle_layout(epd, Limage, draw, metar, remarks, print_table, use_remarks, use_disp_format, interval, wind_speed_units, cloud_layer_units, visibility_units, temperature_units, pressure_units, layout_list, preferred_layouts, use_preferred)
 
-    else:    
-        for index, item in enumerate(layout_list):
-            if index == use_disp_format:
-                print("Layout -->",index,'<--') # debug
-                layout_list[index](display,metar,remarks,print_table,use_remarks,use_disp_format,interval,wind_speed_units,cloud_layer_units,visibility_units,temperature_units,pressure_units) # call appropriate layout
+    else:
+        # Call the specific layout chosen by index
+        if 0 <= use_disp_format < len(layout_list):
+            print("Layout -->",use_disp_format,'<--') # debug
+            # Call the layout function with the new signature
+            layout_list[use_disp_format](epd, Limage, draw, metar, remarks, print_table, use_remarks, use_disp_format, interval, wind_speed_units, cloud_layer_units, visibility_units, temperature_units, pressure_units)
+        else:
+            logging.error(f"Invalid layout index selected: {use_disp_format}")
+            # Optionally draw an error message on Limage using 'draw'
+            draw.text((10, 100), f"Error: Invalid Layout {use_disp_format}", fill=epd.GRAY4, font=font24)
 
-    # Print to e-Paper - This is setup to display on 7x5 3 color waveshare panel. epd7in5b_V2
-    # To use on 2 color panel, remove ', epd.getbuffer(display.im_red)' from 6 lines lower.
-    # All calls to 'display.draw_red.text' will need to be changed to display.draw_black.text
-    # The author has not tried this, but this should accommodate the 2 color display.
-    print("Updating screen...")
-    try:
-        epd.init()          
-        time.sleep(1)
-        print("Printing METAR Data to E-Paper")
-        epd.display(epd.getbuffer(display.im_black), epd.getbuffer(display.im_red))
-        print("Done")
-        time.sleep(2)
+    # Printing to e-Paper is now handled in the main loop after main() returns
 
-    except:
-        print("Printing error")
-    print("------------")
-    return True
+    return True # Indicate success
 
 
 # Execute code starting here.
 if __name__ == "__main__":
-    epd = epd7in5b_V2.EPD() # Instantiate instance for display.
-  
-    while True:        
-        try: 
-#        while True: # debug
-#            error = 1/0 #debug  # forces error to test the try-except statements
-#        if True:  # used instead of the try-except statements for debug purposes.
-            current_time = time.strftime("%m/%d/%Y %H:%M", time.localtime())
-            
-            metar = Metar(airport) # pass to routines
+    try:
+        logging.info("Initializing E-Paper display epd4in2...")
+        epd = epd4in2.EPD() # Instantiate instance for display.
+        logging.info("Setting display to 4 Grayscale mode...")
+        epd.Init_4Gray()    # Initialize for 4 grayscale mode ONCE.
+        logging.info("Clearing display...")
+        epd.Clear()         # Clear screen once initially.
+        time.sleep(1)       # Allow time for clearing
 
-            remarks, print_table = decode_remarks(get_rawOb(metar)) # metar.data[0]['rawOb'])
-#            print('remarks:',remarks,'print_table:',print_table) # debug
-            flightcategory, icon = flight_category(metar)
-            
-            if len(get_rawOb(metar)) > 0: 
-                print('get_rawOb(metar):',get_rawOb(metar),'\n') # debug
-            else:
-                print("No METAR Being Reported")
-                
-            print("Updated " + current_time)
-            print("Creating display")
-            epd.init()
-            epd.Clear()
-            display = Display() # pass to routines
+        while True:
+            try:
+                # --- Create Image Buffer and Drawing Context ---
+                logging.info("Creating new Image buffer (Mode L)")
+                # Create image with white background (GRAY1)
+                Limage = Image.new('L', (epd.width, epd.height), epd.GRAY1)
+                draw = ImageDraw.Draw(Limage) # Get drawing context
 
-            # Update values
-            metar.update(airport)
-            print("Metar Updated")
+                # --- Get METAR Data ---
+                current_time = time.strftime("%m/%d/%Y %H:%M", time.localtime())
+                logging.info(f"Fetching METAR for {airport} at {current_time}")
 
-            main() # Build METAR data to display using specific layout
-                                    
-            # Setup update interval
-            # The update interval can be selected via cmd line or web iterface
-            # If Auto Interval is selected, then Flight Category dictates update
-            # So the worse the weather, the more often it updates.
+                metar = Metar(airport) # Fetch data using Metar class
+                raw_metar_text = get_rawOb(metar) # Get raw text
 
-            if interval != 0: # if not auto interval selected
-                print("sleep ",interval) # debug
-                time.sleep(interval) # Sets interval of updates. 3600 = 1 hour
-                
-            else:
-                if flightcategory == "VFR":
-                    print("Auto Interval VFR - Sleep 1 hour") # debug
-                    time.sleep(3600) # 1 hour if weather is good
-                elif flightcategory == "MVFR":
-                    print("Auto Interval MVFR - Sleep 30 mins") # debug
-                    time.sleep(1800) # 30 mins if marginal
-                elif flightcategory == "IFR":
-                    print("Auto Interval IFR - Sleep 20 mins") # debug
-                    time.sleep(1200) # 20 mins if stormy
-                elif flightcategory == "LIFR": 
-                    print("Auto Interval LIFR - Sleep 10 mins") # debug
-                    time.sleep(600) # 10 mins if stormy and low visibility
-                
-            epd.init()
-            epd.sleep()
-            
-        except Exception as e:
-            time.sleep(2)
-            print("Error Occurred in Main While Loop")
-            exception_type, exception_object, exception_traceback = sys.exc_info()
-            filename = exception_traceback.tb_frame.f_code.co_filename
-            line_number = exception_traceback.tb_lineno
-            print(e)
-            print("Exception type: ", exception_type)
-            print("File name: ", filename)
-            print("Line number: ", line_number)
-            
-            # Print to e-Paper that there is an error
-            epd.init()
-            epd.Clear()            
-            display = Display()
-            
-            # If error caused because weather.gov server hiccuped, then display image and wait to retry
-            if "properties" in str(e) or "index out of" in str(e) or "HTTPSConnectionPool" in str(e): # METAR not being provided
-                display.draw_icon(70, 10, "b", 660, 470, "testpattern3")
-                
-            # Otherwise another processing error occured so we'll display the message on the e-paper
-            else: 
-                msg1 = "- Error Occurred -"
-                msg2 = "One Moment While We Try Again..."    
-            
-                w, h = display.draw_black.textsize(msg1, font=font48)
-                display.draw_black.text((400-(w/2), 170), msg1, fill=0, font=font48)
-                w, h = display.draw_black.textsize(msg2, font=font24)            
-                display.draw_red.text((400-(w/2), 230), msg2, fill=0, font=font24)
-                
-                display.draw_black.text((40, 340), str(e), fill=0, font=font24)
-                display.draw_black.text((40, 370), str(exception_type), fill=0, font=font24)
-                display.draw_black.text((40, 400), str(filename), fill=0, font=font24)
-                display.draw_black.text((40, 430), "Line number: "+str(line_number), fill=0, font=font24)
-            
-            print("Printing Error info to E-Paper...")
-            epd.display(epd.getbuffer(display.im_black), epd.getbuffer(display.im_red))
-            print("Done")
-            time.sleep(60) # Sets interval of updates. 60 = 1 minute
-            epd.init()
-            epd.sleep()
-            
+                if raw_metar_text and len(raw_metar_text) > 0:
+                    logging.info(f'Raw METAR: {raw_metar_text}')
+                    remarks, print_table = decode_remarks(raw_metar_text)
+                    flightcategory, icon = flight_category(metar) # Assumes metar object is populated correctly
+                    logging.info(f"Flight Category: {flightcategory}")
+                else:
+                    logging.warning("No METAR Being Reported or fetch failed.")
+                    # Draw message directly onto Limage
+                    draw.text((20, 100), f"No METAR Data for {airport}", fill=epd.GRAY4, font=font24)
+                    remarks, print_table = "", [] # Set defaults
+                    flightcategory = "N/A" # Set default category
+
+                # --- Build Display Layout ---
+                logging.info("Building display layout...")
+                main(epd, Limage, draw) # Call main function to draw on Limage
+
+                # --- Update E-Paper Screen ---
+                logging.info("Generating 4Gray Buffer...")
+                gray_buffer = epd.getbuffer_4Gray(Limage)
+
+                logging.info("Sending 4Gray Buffer to display...")
+                epd.display_4Gray(gray_buffer)
+                logging.info("Display update complete.")
+
+                # --- Calculate Sleep Interval ---
+                sleep_interval = 0
+                if interval != 0: # Manual interval set
+                    sleep_interval = interval
+                    logging.info(f"Manual sleep interval: {sleep_interval} seconds")
+                else: # Auto interval based on flight category
+                    if flightcategory == "VFR":
+                        sleep_interval = 3600 # 1 hour
+                        logging.info("Auto Interval VFR - Sleep 1 hour")
+                    elif flightcategory == "MVFR":
+                        sleep_interval = 1800 # 30 mins
+                        logging.info("Auto Interval MVFR - Sleep 30 mins")
+                    elif flightcategory == "IFR":
+                        sleep_interval = 1200 # 20 mins
+                        logging.info("Auto Interval IFR - Sleep 20 mins")
+                    elif flightcategory == "LIFR":
+                        sleep_interval = 600 # 10 mins
+                        logging.info("Auto Interval LIFR - Sleep 10 mins")
+                    else: # N/A or other case
+                        sleep_interval = 1800 # Default to 30 mins if category unknown
+                        logging.info("Auto Interval Unknown/N/A - Sleep 30 mins")
+
+                logging.info(f"Sleeping for {sleep_interval} seconds...")
+                time.sleep(sleep_interval)
+                # Do NOT put epd.sleep() here if looping
+
+            except Exception as e:
+                logging.error("Error Occurred in Main Loop Execution")
+                exception_type, exception_object, exception_traceback = sys.exc_info()
+                filename = os.path.basename(exception_traceback.tb_frame.f_code.co_filename)
+                line_number = exception_traceback.tb_lineno
+                logging.error(f"Error: {e}")
+                logging.error(f"Exception type: {exception_type}")
+                logging.error(f"File name: {filename}")
+                logging.error(f"Line number: {line_number}")
+                print(traceback.format_exc()) # Print full traceback for debugging
+
+                # --- Display Error on E-Paper ---
+                try:
+                    logging.info("Attempting to display error message on e-Paper...")
+                    # Create a fresh image for the error message
+                    ErrorImage = Image.new('L', (epd.width, epd.height), epd.GRAY1) # White background
+                    draw_error = ImageDraw.Draw(ErrorImage)
+
+                    # Simple Error Message
+                    msg1 = "- Error Occurred -"
+                    msg2 = "Check Logs. Retrying in 60s..."
+                    w1, h1 = draw_error.textsize(msg1, font=font36b)
+                    draw_error.text(((epd.width - w1) / 2, 80), msg1, fill=epd.GRAY4, font=font36b)
+                    w2, h2 = draw_error.textsize(msg2, font=font24)
+                    draw_error.text(((epd.width - w2) / 2, 130), msg2, fill=epd.GRAY4, font=font24)
+
+                    # Detailed Info (optional, might be too much)
+                    err_line1 = f"Type: {exception_type.__name__}"
+                    err_line2 = f"File: {filename} Line: {line_number}"
+                    draw_error.text((20, 180), err_line1, fill=epd.GRAY3, font=font16)
+                    draw_error.text((20, 200), err_line2, fill=epd.GRAY3, font=font16)
+                    draw_error.text((20, 220), str(e)[:40], fill=epd.GRAY3, font=font16) # First part of error message
+
+                    error_buffer = epd.getbuffer_4Gray(ErrorImage)
+                    epd.display_4Gray(error_buffer)
+                    logging.info("Error message displayed.")
+
+                except Exception as display_err:
+                    logging.error(f"Could NOT display error message on e-Paper: {display_err}")
+
+                logging.info("Sleeping for 60 seconds after error...")
+                time.sleep(60) # Wait before retrying after an error
+
+    except IOError as e:
+        logging.error(f"IOError during initialization or font loading: {e}")
+        print(traceback.format_exc())
+    except KeyboardInterrupt:
+        logging.info("Ctrl+C detected. Exiting...")
+        epd.sleep() # Put display to sleep
+        time.sleep(1)
+        epd4in2.epdconfig.module_exit(cleanup=True) # Clean up GPIO
+        exit()
+    except Exception as init_err:
+        logging.critical(f"FATAL: Unhandled exception during setup: {init_err}")
+        print(traceback.format_exc())
+        # Attempt cleanup if possible
+        try:
+            epd4in2.epdconfig.module_exit(cleanup=True)
+        except NameError:
+            pass # epd object might not exist
+        exit()

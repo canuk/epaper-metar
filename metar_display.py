@@ -83,8 +83,8 @@ class Metar:
 
 class Display:
     def __init__(self):
-        self.im_black = Image.new('1', (800, 480), 255)
-        self.im_red = Image.new('1', (800, 480), 255)
+        self.im_black = Image.new('1', (400, 300), 255)
+        self.im_red = Image.new('1', (400, 00), 255)
         self.draw_black = ImageDraw.Draw(self.im_black)
         self.draw_red = ImageDraw.Draw(self.im_red)
 
@@ -92,7 +92,7 @@ class Display:
     def draw_text_centered(self, ypos, text, font):
         w, h = self.draw_black.textsize(text)
         #print(w,h) # debug
-        self.draw_black.text(((800-w-100)/2, ypos), text, fill=0, font=font) 
+        self.draw_black.text(((400-w-100)/2, ypos), text, fill=0, font=font) 
 
 
     def draw_circle(self, x, y, r, c):
@@ -118,7 +118,7 @@ class Display:
 
     
     def draw_icon(self, x, y, c, l, h, icon):
-        im_icon = Image.open("/home/pi/metar/icons/" + icon + ".png")
+        im_icon = Image.open("/home/epaper/metar/icons/" + icon + ".png")
         im_icon = im_icon.convert("RGBA") #"LA"
         im_icon = im_icon.resize((l, h))
 
@@ -234,7 +234,7 @@ class Display:
   
         im_pic = Image.open("temp_pic.png")
         if nourl == 0:
-            im_pic = im_pic.resize((800, 480))
+            im_pic = im_pic.resize((400, 300))
         
         if color == "b":
             self.im_black.paste(im_pic, (pos_x, pos_y))

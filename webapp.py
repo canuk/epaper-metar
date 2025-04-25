@@ -17,7 +17,7 @@ app = Flask(__name__)
 app.secret_key = b'_5#y2L"F4Q8z\n\xec]/'
 
 # variables
-PATH = '/home/pi/metar/'
+PATH = '/home/epaper/metar/'
 data_field4 = "0"
 dis_select = [
     'Cycle Through All Layouts',

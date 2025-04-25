@@ -8,21 +8,21 @@
 # These settings will be used if script is run with no cmd line arguments
 
 # Default User Settings
-airport = "KFLG"         # enter default airport identifier to display
+airport = "KF70"         # enter default airport identifier to display
 use_disp_format = -2     # Choose which display layout to use. -1=Random layout, -2=Cycle layouts, -3=Display IP
-interval = 60            # enter default time in seconds between METAR updates - i.e. 3600 = 1 hour
+interval = 900 #15 min            # enter default time in seconds between METAR updates - i.e. 3600 = 1 hour
 use_remarks = 0          # 0 = display airport information, 1 = display metar remarks info
 
 # Display Units
-wind_speed_units = 0     # 0=km/h, 1=m/s, 2=knots, 3=miles per hour
-cloud_layer_units = 1    # 0=feet, 1=meters
-visibility_units = 1     # 0=miles, 1=kilometers
-temperature_units = 0    # 0=°C Celsius, 1=°F Farhenheit
-pressure_units = 0       # 0=Hectopascal, 1=Inch Hg
+wind_speed_units = 2     # 0=km/h, 1=m/s, 2=knots, 3=miles per hour
+cloud_layer_units = 0    # 0=feet, 1=meters
+visibility_units = 0     # 0=miles, 1=kilometers
+temperature_units = 1    # 0=°C Celsius, 1=°F Farhenheit
+pressure_units = 1       # 0=Hectopascal, 1=Inch Hg
 
 # preferred_layouts: Populate with the integers of the layout that should be used. i.e. 123 will only display layouts 1, 2 and 3.
 # If no preferred layouts are desired, populate with 'na' 
-preferred_layouts = 123  
+preferred_layouts = 'na'  
 
 # Random Airports Choices (Layout5):
 # This is the only layout that doesn't use cmd line arguments
